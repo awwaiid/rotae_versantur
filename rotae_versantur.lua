@@ -59,18 +59,19 @@ local pos = 0
 function Reel:addDeltaPosition(d)
   print("addDeltaPosition", self.id, d)
   self.position = self.position + d
+  -- Seek to this position in the playback
   engine.setPosition(self.position / 64 * frames)
 end
 
 function Reel:draw(arc)
   if reel_state == 1 then
-    print("arc led", self.id, self.position)
+    -- print("arc led", self.id, self.position)
     arc:led(self.id, self.position, 15)
   elseif reel_state == 2 then
-    print("arc led rolling", self.id, self.amp)
+    -- print("arc led rolling", self.id, self.amp)
     arc:led(self.id, math.floor(self.amp * 16), 15) -- 1/4 = 1 so we can max amp of 4
   end
-  
+
 end
 
 -- function Editor:redraw()
@@ -98,7 +99,7 @@ button_pressed = false
 
 
 my_arc.delta = function(n, d)
-  
+
   if not button_pressed then
     if reel_state == 1 then
       reels[n]:addDeltaPosition(d)
@@ -106,7 +107,7 @@ my_arc.delta = function(n, d)
       reels[n]:addDeltaAmp(d)
     end
   else -- button pressed
-    
+
     if n == 1 then
       shift_mode = "record"
       record_focus_detail = util.clamp(record_focus_detail + d, 0, 300)
@@ -119,7 +120,7 @@ my_arc.delta = function(n, d)
         reels[record_focus].record = true
       end
     end
-    
+
     if n == 4 then
       shift_mode = "bounce"
       bounce_select_detail = util.clamp(bounce_select_detail + d, 0, 255)
@@ -141,12 +142,12 @@ my_arc.delta = function(n, d)
         reels[4].bounce = true
       end
     end
-      
+
   end
-  
-  redraw()  
-  
-  
+
+  redraw()
+
+
   -- prev_tic = my_arc.vals[n] // 16 + 1
   -- my_arc.vals[n] = (my_arc.vals[n] + d) % 1024
   -- print(n,d,my_arc.vals[n])
@@ -167,7 +168,7 @@ end
 
 my_arc.key = function(n, z)
   print("key", n, z)
-  
+
   if z == 1 and not button_pressed then
     button_pressed = true
   elseif z == 0 and button_pressed and shift_mode == "none" then
@@ -180,7 +181,9 @@ my_arc.key = function(n, z)
     if reel_states[reel_state] == "rolling" then
       -- engine.play("/home/we/dust/audio/x0x/808/808-RS.wav", 1, 0, 0, 1, 0, 1, 1)
       -- engine.loadFromFile("/home/we/dust/audio/x0x/808/808-RS.wav")
-      engine.loadFromFile("/home/we/dust/code/repl-looper/audio/musicbox/Wouldnt-Mind-Workin-From-Sun-To-Sun_2011121108_001_00-01-05.ogg")
+      engine.setRate(1)
+    elseif reel_states[reel_state] == "stopped" then
+      engine.setRate(0)
     end
 
     redraw()
@@ -189,7 +192,7 @@ my_arc.key = function(n, z)
     button_pressed = false
     redraw()
   end
-  
+
 end
 
 
@@ -198,15 +201,15 @@ function redraw()
   screen.move(0,10)
   screen.level(15)
   screen.text("Reels: " .. reel_states[reel_state])
-  
+
   for i, reel in ipairs(reels) do
     screen.move(0, 10 + i * 10)
     screen.text("Reel " .. i ..": " .. reel:toString())
   end
   screen.update()
-  
+
   my_arc:all(0)
-  
+
   if shift_mode == "none" then
   for i, reel in ipairs(reels) do
     reel:draw(my_arc)
@@ -232,9 +235,9 @@ function redraw()
       my_arc:led(record_focus, i, 4)
     end
   end
-  
+
   my_arc:refresh()
-  
+
 end
 
 function osc.event(path, args, from)
@@ -244,11 +247,8 @@ function osc.event(path, args, from)
     startFrame = args[2]
     endFrame = args[3]
     pos = args[4]
-    print("playPosition", frames, startFrame, endFrame, pos)
+    -- print("playPosition", frames, startFrame, endFrame, pos)
     reels[1].position = math.floor((pos / frames) * 64)
-
-    -- playPosition	423408.0	0.0	423408.0	366352.0
-    -- playPosition	423408.0	0.0	423408.0	303760.0
     redraw()
   else
     print("Other OSC path", path)
@@ -256,4 +256,8 @@ function osc.event(path, args, from)
 
 end
 
+function init()
+  -- For now I am manually loading in some buffers
+  engine.loadFromFile("/home/we/dust/code/repl-looper/audio/musicbox/Wouldnt-Mind-Workin-From-Sun-To-Sun_2011121108_001_00-01-05.ogg")
+end
 

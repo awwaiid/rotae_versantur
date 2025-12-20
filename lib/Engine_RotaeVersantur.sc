@@ -73,7 +73,7 @@ Engine_RotaeVersantur : CroneEngine {
       Buffer.read(context.server, filename, action: {
         arg bufnum;
         ("loaded " ++ filename ++ " frames: " ++ bufnum.numFrames).postln;
-        play_buf_player_synthdef.set(\bufnum, bufnum, \t_trig, 1);
+        play_buf_player_synthdef.set(\bufnum, bufnum, \rate, 0, \t_trig, 1);
 
         // Communicate back that the sample is loaded
         // scriptAddress.sendBundle(0, ['/engineSamplerLoad', filename, bufnum.numFrames]);
@@ -91,6 +91,13 @@ Engine_RotaeVersantur : CroneEngine {
       var targetFrame = msg[1];
       ("Going to frame " ++ targetFrame).postln;
       play_buf_player_synthdef.set(\jumpPos, targetFrame, \t_trig, 1);
+    });
+
+    this.addCommand("setRate", "f", {
+      arg msg;
+      var rate = msg[1];
+      ("Setting rate to " ++ rate).postln;
+      play_buf_player_synthdef.set(\rate, rate, \t_trig, 1);
     });
   }
 
