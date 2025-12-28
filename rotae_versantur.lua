@@ -156,7 +156,11 @@ my_arc.delta = function(reelNum, delta)
     else
 
       -- The button is pressed
-      if reelNum == 3 then
+      if reelNum == 1 then
+        shift_mode = "?"
+      elseif reelNum == 2 then
+        shift_mode = "?"
+      elseif reelNum == 3 then
         shift_mode = "record"
         record_focus_detail = util.clamp(record_focus_detail + delta, 0, 300)
         record_focus = record_focus_detail // 75
