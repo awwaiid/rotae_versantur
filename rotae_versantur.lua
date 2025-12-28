@@ -1,3 +1,36 @@
+-- Rotae Versantur
+-- The Wheels Turn
+--
+-- Use the Arc to visualize and
+-- control a four-track recording
+-- and playback machine
+--
+-- Button release
+--   Toggle Rolling vs Stopped
+--
+-- Rolling Wheel
+--   Set amp for that track
+--
+-- Button + Rolling Wheel
+--   Seek to position on track
+--
+-- Stopped Wheel
+--   Seek to position on track
+--
+-- Button + Stopped Wheel 1
+--   Seek to position all tracks
+--
+-- Button + Stopped Wheel 2
+--   Select unmuted tracks
+--
+-- Button + Stopped Wheel 3
+--   Select recording track
+--
+-- Button + Stopped Wheel 4
+--   Select bounced tracks,
+--   they then feed recording
+--
+
 
 local reel_states = { "stopped", "rolling" }
 local reel_state = 1 -- stopped
@@ -25,12 +58,13 @@ function Reel.new(options)
   -- local options = options or {}
   local self = {
     id = Reel.next_id,
-    amp = 1,
-    pan = 0,
-    reverb = 0,
+    amp = 1.0,
+    pan = 0.0,
+    reverb = 0.0,
     position = 0,
     record = false,
-    bounce = false
+    bounce = false,
+    frames = 1,
   }
   Reel.next_id = Reel.next_id + 1
   setmetatable(self, Reel)
@@ -46,32 +80,30 @@ function Reel:toString()
          " " .. tostring(self.bounce)
 end
 
-function Reel:addDeltaAmp(d)
-  print("addDeltaAmp", self.id, d)
-  self.amp = util.clamp(self.amp + (d / 10), 0, 4)
+function Reel:addDeltaAmp(delta)
+  print("addDeltaAmp", self.id, delta)
+  self.amp = util.clamp(self.amp + (delta / 256), 0, 4)
+  engine.setAmp(self.id - 1, self.amp)
 end
 
-local frames = 100
-local startFrame = 0
-local endFrame = 99
-local pos = 0
-
 function Reel:addDeltaPosition(d)
-  print("addDeltaPosition", self.id, d)
+  print("addDeltaPosition 2", self.id, d)
   self.position = self.position + d
   -- Seek to this position in the playback
-  engine.setPosition(self.position / 64 * frames)
+  engine.setPosition(self.id - 1, self.position / 64 * self.frames)
 end
 
 function Reel:draw(arc)
-  if reel_state == 1 then
-    -- print("arc led", self.id, self.position)
-    arc:led(self.id, self.position, 15)
-  elseif reel_state == 2 then
-    -- print("arc led rolling", self.id, self.amp)
-    arc:led(self.id, math.floor(self.amp * 16), 15) -- 1/4 = 1 so we can max amp of 4
+  -- 1/4 = 1 so we can max amp of 4
+  local ampLed = math.floor(self.amp * (64/4)) + 1
+  if self.amp == 0.0 then
+    ampLed = 0
+  end
+  for ledNum = 1, ampLed do
+    arc:led(self.id, ledNum, 4)
   end
 
+  arc:led(self.id, self.position, 15)
 end
 
 -- function Editor:redraw()
@@ -90,80 +122,90 @@ local my_arc = arc.connect()
 my_arc:all(1)
 my_arc:refresh()
 
-
 print("hello")
-
-my_arc.vals = { 0, 0, 0, 0 }
 
 button_pressed = false
 
+my_arc.delta = function(reelNum, delta)
 
-my_arc.delta = function(n, d)
+-- Rolling Wheel
+--   Set amp for that track
+--
+-- Button + Rolling Wheel
+--   Seek to position on track
+--
+-- Stopped Wheel
+--   Seek to position on track
+--
+-- Button + Stopped Wheel 1
+--   Seek to position all tracks
+--
+-- Button + Stopped Wheel 2
+--   Select unmuted tracks
+--
+-- Button + Stopped Wheel 3
+--   Select recording track
+--
+-- Button + Stopped Wheel 4
+--   Select bounced tracks,
+--   they then feed recording
 
-  if not button_pressed then
-    if reel_state == 1 then
-      reels[n]:addDeltaPosition(d)
+  if reel_states[reel_state] == "stopped" then
+    if not button_pressed then
+      reels[reelNum]:addDeltaPosition(delta)
     else
-      reels[n]:addDeltaAmp(d)
-    end
-  else -- button pressed
 
-    if n == 1 then
-      shift_mode = "record"
-      record_focus_detail = util.clamp(record_focus_detail + d, 0, 300)
-      record_focus = record_focus_detail // 75
-      print("shift record", shift_mode, record_focus_detail, record_focus)
-      for reel_num = 1, 4 do
-        reels[reel_num].record = false
+      -- The button is pressed
+      if reelNum == 3 then
+        shift_mode = "record"
+        record_focus_detail = util.clamp(record_focus_detail + delta, 0, 300)
+        record_focus = record_focus_detail // 75
+        print("shift record", shift_mode, record_focus_detail, record_focus)
+        for reel_num = 1, 4 do
+          reels[reel_num].record = false
+        end
+        if record_focus > 0 then
+          reels[record_focus].record = true
+        end
       end
-      if record_focus > 0 then
-        reels[record_focus].record = true
+
+      if reelNum == 4 then
+        shift_mode = "bounce"
+        bounce_select_detail = util.clamp(bounce_select_detail + delta, 0, 255)
+        bounce_select = bounce_select_detail // 16
+        print("bounce select", bounce_select_detail, bounce_select)
+        for reel_num = 1, 4 do
+          reels[reel_num].bounce = false
+        end
+        if bounce_select % 16 > 7 then
+          reels[1].bounce = true
+        end
+        if bounce_select % 8 > 3 then
+          reels[2].bounce = true
+        end
+        if bounce_select % 4 > 1 then
+          reels[3].bounce = true
+        end
+        if bounce_select % 2 > 0 then
+          reels[4].bounce = true
+        end
       end
+
     end
 
-    if n == 4 then
-      shift_mode = "bounce"
-      bounce_select_detail = util.clamp(bounce_select_detail + d, 0, 255)
-      bounce_select = bounce_select_detail // 16
-      print("bounce select", bounce_select_detail, bounce_select)
-      for reel_num = 1, 4 do
-        reels[reel_num].bounce = false
-      end
-      if bounce_select % 16 > 7 then
-        reels[1].bounce = true
-      end
-      if bounce_select % 8 > 3 then
-        reels[2].bounce = true
-      end
-      if bounce_select % 4 > 1 then
-        reels[3].bounce = true
-      end
-      if bounce_select % 2 > 0 then
-        reels[4].bounce = true
-      end
+  elseif reel_states[reel_state] == "rolling" then
+
+    if button_pressed then
+      shift_mode = "seek"
+      reels[reelNum]:addDeltaPosition(delta)
+    else
+      reels[reelNum]:addDeltaAmp(delta)
     end
 
   end
 
   redraw()
 
-
-  -- prev_tic = my_arc.vals[n] // 16 + 1
-  -- my_arc.vals[n] = (my_arc.vals[n] + d) % 1024
-  -- print(n,d,my_arc.vals[n])
-
-  -- new_tic = my_arc.vals[n] // 16 + 1
-  -- print("new vs old", new_tic, prev_tic)
-  -- if new_tic ~= prev_tic then
-  --   -- engine.play(path, amp, amp_lag, sample_start, sample_end, loop, rate, trig)
-  --   engine.play("/home/we/dust/audio/x0x/808/808-RS.wav", 1, 0, 0, 1, 0, 1, 1)
-  -- else
-  --   engine.play("/home/we/dust/audio/x0x/808/808-RS.wav", 0.1, 0, 0, 1, 0, 1, 1)
-  -- end
-  -- my_arc:all(0)
-  -- my_arc:led(n, prev_tic, 12)
-  -- my_arc:led(n, new_tic, 15)
-  -- my_arc:refresh()
 end
 
 my_arc.key = function(n, z)
@@ -181,18 +223,23 @@ my_arc.key = function(n, z)
     if reel_states[reel_state] == "rolling" then
       -- engine.play("/home/we/dust/audio/x0x/808/808-RS.wav", 1, 0, 0, 1, 0, 1, 1)
       -- engine.loadFromFile("/home/we/dust/audio/x0x/808/808-RS.wav")
-      engine.setRate(1)
+      for reelNum, reel in ipairs(reels) do
+        engine.setRate(reelNum - 1, 1)
+      end
     elseif reel_states[reel_state] == "stopped" then
-      engine.setRate(0)
+      for reelNum, reel in ipairs(reels) do
+        engine.setRate(reelNum - 1, 0)
+      end
     end
 
-    redraw()
   else
+    -- Release after doing some shift-mode actions
+    -- so dont' change the reel state
     shift_mode = "none"
     button_pressed = false
-    redraw()
   end
 
+  redraw()
 end
 
 
@@ -200,7 +247,7 @@ function redraw()
   screen.clear()
   screen.move(0,10)
   screen.level(15)
-  screen.text("Reels: " .. reel_states[reel_state])
+  screen.text("Reels: " .. reel_states[reel_state] .. " shift " .. shift_mode)
 
   for i, reel in ipairs(reels) do
     screen.move(0, 10 + i * 10)
@@ -210,10 +257,10 @@ function redraw()
 
   my_arc:all(0)
 
-  if shift_mode == "none" then
-  for i, reel in ipairs(reels) do
-    reel:draw(my_arc)
-  end
+  if shift_mode == "none" or shift_mode == "seek" then
+    for i, reel in ipairs(reels) do
+      reel:draw(my_arc)
+    end
   elseif shift_mode == "record" then
     if record_focus < 1 then
       my_arc:all(3)
@@ -241,23 +288,26 @@ function redraw()
 end
 
 function osc.event(path, args, from)
-
   if path == "/playPosition" then
-    frames = args[1]
-    startFrame = args[2]
-    endFrame = args[3]
-    pos = args[4]
-    -- print("playPosition", frames, startFrame, endFrame, pos)
-    reels[1].position = math.floor((pos / frames) * 64)
+    local reelNum = args[1] + 1
+    local frames = args[2]
+    local startFrame = args[3]
+    local endFrame = args[4]
+    local pos = args[5]
+    print("osc event set playPosition", reelNum, frames, startFrame, endFrame, pos)
+    reels[reelNum].position = math.floor((pos / frames) * 64)
+    reels[reelNum].frames = frames
     redraw()
   else
     print("Other OSC path", path)
   end
-
 end
 
 function init()
-  -- For now I am manually loading in some buffers
-  engine.loadFromFile("/home/we/dust/code/repl-looper/audio/musicbox/Wouldnt-Mind-Workin-From-Sun-To-Sun_2011121108_001_00-01-05.ogg")
+  print("Inside of init")
+  engine.loadFromFile(0, "/home/we/dust/code/repl-looper/audio/musicbox/Wouldnt-Mind-Workin-From-Sun-To-Sun_2011121108_001_00-01-05.ogg")
+  engine.loadFromFile(1, "/home/we/dust/code/repl-looper/audio/musicbox/Wouldnt-Mind-Workin-From-Sun-To-Sun_2011121108_002_00-01-32.ogg")
+  engine.loadFromFile(2, "/home/we/dust/code/repl-looper/audio/musicbox/Wouldnt-Mind-Workin-From-Sun-To-Sun_2011121108_003_00-01-52.ogg")
+  engine.loadFromFile(3, "/home/we/dust/code/repl-looper/audio/musicbox/William-Gagnon_DR000067_003_00-00-47.ogg")
 end
 
