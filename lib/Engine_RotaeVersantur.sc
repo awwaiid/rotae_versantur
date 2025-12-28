@@ -1,10 +1,10 @@
 
 Engine_RotaeVersantur : CroneEngine {
-  classvar numReels = 4;
+  classvar numWheels = 4;
   var buffer;
   var play_buf_player_synthdef;
   var oscPositionInfo;
-  var reels;
+  var wheels;
 
   *new { arg context, doneCallback;
     ^super.new(context, doneCallback);
@@ -12,8 +12,8 @@ Engine_RotaeVersantur : CroneEngine {
 
   alloc {
 
-    SynthDef(\ReelSynth, {
-      arg out=0, bufnum=0, rate=1, start=0, end=1, t_trig=0, loops=1, jumpPos=0, reelNum=0, amp=1;
+    SynthDef(\WheelSynth, {
+      arg out=0, bufnum=0, rate=1, start=0, end=1, t_trig=0, loops=1, jumpPos=0, wheelNum=0, amp=1;
       var snd, playHead, frames, duration, envelope;
 
       rate = rate * BufRateScale.kr(bufnum);
@@ -40,7 +40,7 @@ Engine_RotaeVersantur : CroneEngine {
       SendReply.kr(
         trig: Impulse.kr(4),
         cmdName: '/playPosition',
-        values: [ reelNum, frames, start * frames, end * frames, playHead ]
+        values: [ wheelNum, frames, start * frames, end * frames, playHead ]
       );
 
       snd = BufRd.ar(
@@ -56,12 +56,12 @@ Engine_RotaeVersantur : CroneEngine {
       Out.ar(out, snd)
     }).add;
 
-		reels = Array.fill(numReels, { arg i;
-			Synth.new(\ReelSynth, [\reelNum, i]);
+		wheels = Array.fill(numWheels, { arg i;
+			Synth.new(\WheelSynth, [\wheelNum, i]);
 		});
 
     oscPositionInfo = OSCFunc({ |msg|
-      var reelNum = msg[3];
+      var wheelNum = msg[3];
       var frames = msg[4];
       var startFrame = msg[5];
       var endFrame = msg[6];
@@ -69,19 +69,19 @@ Engine_RotaeVersantur : CroneEngine {
       // var id=msg[3].asInteger;
       // var progress=msg[4];
       NetAddr("127.0.0.1", 10111).sendMsg(
-        "/playPosition", reelNum, frames, startFrame, endFrame, playHead
+        "/playPosition", wheelNum, frames, startFrame, endFrame, playHead
       );
     }, '/playPosition');
 
     this.addCommand("loadFromFile", "is", {
       arg msg;
-      var reelNum = msg[1];
+      var wheelNum = msg[1];
       var filename = msg[2];
-      ("Going to load " ++ filename ++ " into reel " ++ reelNum).postln;
+      ("Going to load " ++ filename ++ " into wheel " ++ wheelNum).postln;
       Buffer.read(context.server, filename, action: {
         arg bufnum;
         ("loaded " ++ filename ++ " frames: " ++ bufnum.numFrames).postln;
-        reels[reelNum].set(\bufnum, bufnum, \rate, 0, \t_trig, 1);
+        wheels[wheelNum].set(\bufnum, bufnum, \rate, 0, \t_trig, 1);
 
         // Communicate back that the sample is loaded
         // scriptAddress.sendBundle(0, ['/engineSamplerLoad', filename, bufnum.numFrames]);
@@ -91,31 +91,31 @@ Engine_RotaeVersantur : CroneEngine {
 
     this.addCommand("setPosition", "ii", {
       arg msg;
-      var reelNum = msg[1];
+      var wheelNum = msg[1];
       var targetFrame = msg[2];
-      ("Reel " ++ reelNum ++ " jumping to frame " ++ targetFrame).postln;
-      reels[reelNum].set(\jumpPos, targetFrame, \t_trig, 1);
+      ("Wheel " ++ wheelNum ++ " jumping to frame " ++ targetFrame).postln;
+      wheels[wheelNum].set(\jumpPos, targetFrame, \t_trig, 1);
     });
 
     this.addCommand("setRate", "if", {
       arg msg;
-      var reelNum = msg[1];
+      var wheelNum = msg[1];
       var rate = msg[2];
-      ("Reel " ++ reelNum ++ " setting rate to " ++ rate).postln;
-      reels[reelNum].set(\rate, rate);
+      ("Wheel " ++ wheelNum ++ " setting rate to " ++ rate).postln;
+      wheels[wheelNum].set(\rate, rate);
     });
 
     this.addCommand("setAmp", "if", {
       arg msg;
-      var reelNum = msg[1];
+      var wheelNum = msg[1];
       var amp = msg[2];
-      ("Reel " ++ reelNum ++ " setting amp to " ++ amp).postln;
-      reels[reelNum].set(\amp, amp);
+      ("Wheel " ++ wheelNum ++ " setting amp to " ++ amp).postln;
+      wheels[wheelNum].set(\amp, amp);
     });
   }
 
   free {
-    reels.do({ arg reel; reel.free; });
+    wheels.do({ arg wheel; wheel.free; });
     oscPositionInfo.free;
   }
 }
