@@ -13,12 +13,12 @@ Engine_RotaeVersantur : CroneEngine {
   alloc {
 
     SynthDef(\WheelSynth, {
-      arg out=0, bufnum=0, rate=1, start=0, end=1, t_trig=0, loops=1, jumpPos=0, wheelNum=0, amp=1;
+      arg out=0, bufnum=0, rate=1, start=0, end=1, t_trig=0, jumpPos=0, wheelNum=0, amp=1;
       var snd, playHead, frames, duration, envelope;
 
       rate = rate * BufRateScale.kr(bufnum);
       frames = BufFrames.kr(bufnum);
-      duration = frames * (end - start) / rate / context.server.sampleRate * loops;
+      duration = frames * (end - start) / rate / context.server.sampleRate;
 
       envelope = EnvGen.ar(
         Env.new(
@@ -66,8 +66,6 @@ Engine_RotaeVersantur : CroneEngine {
       var startFrame = msg[5];
       var endFrame = msg[6];
       var playHead = msg[7];
-      // var id=msg[3].asInteger;
-      // var progress=msg[4];
       NetAddr("127.0.0.1", 10111).sendMsg(
         "/playPosition", wheelNum, frames, startFrame, endFrame, playHead
       );
