@@ -49,6 +49,7 @@ local record_focus = 0
 local bounce_select_detail = 0
 local bounce_select = 0
 
+local maxFrames = 0
 
 local Wheel = {}
 Wheel.__index = Wheel
@@ -102,6 +103,7 @@ function Wheel:addDeltaPosition(d)
   engine.setPosition(self.id - 1, self.currentFrame)
 end
 
+local total_times = 0
 function Wheel:draw(arc)
   -- 1/4 = 1 so we can max amp of 4
   local ampLed = math.floor(self.amp * (64/4)) + 1
@@ -119,7 +121,11 @@ function Wheel:draw(arc)
     end
   end
 
-  arc:led(self.id, self.position, 15)
+  if total_times < 100 then
+    print("arc:led(" .. self.id .. ", math.floor(" .. self.position .. ") + 1, 15)")
+    total_times = total_times + 1
+  end
+  arc:led(self.id, math.floor(self.position), 15)
 end
 
 -- function Editor:redraw()
@@ -271,13 +277,17 @@ end
 
 function redraw()
   screen.clear()
-  screen.move(0,10)
   screen.level(15)
-  screen.text("Wheels: " .. wheel_states[wheel_state] .. " shift " .. shift_mode)
+
+  screen.move(0,5)
+  screen.text("maxFrame: " .. maxFrames)
+
+  screen.move(0,10)
+  screen.text("Wheels: " .. wheel_states[wheel_state] .. " Shift: " .. shift_mode)
 
   for i, wheel in ipairs(wheels) do
     screen.move(0, 10 + i * 10)
-    screen.text("Wheel " .. i ..": " .. wheel:toString())
+    screen.text(i ..": " .. wheel:toString())
   end
   screen.update()
 
@@ -315,6 +325,7 @@ function redraw()
 
 end
 
+local total_times2 = 0
 function osc.event(path, args, from)
   if path == "/playPosition" then
     local wheelNum = args[1] + 1
@@ -322,15 +333,34 @@ function osc.event(path, args, from)
     local startFrame = args[3]
     local endFrame = args[4]
     local pos = args[5]
-    print("osc event set playPosition", wheelNum, frames, startFrame, endFrame, pos)
-    wheels[wheelNum].frames = frames
+    if wheels[wheelNum].frames - 1 ~= frames then
+      print("osc event set playPosition", wheelNum, frames, startFrame, endFrame, pos)
+    end
+    wheels[wheelNum].frames = frames + 1
     wheels[wheelNum].currentFrame = pos
-    wheels[wheelNum].position = math.floor((pos / frames) * 64)
+    if total_times2 < 10 then
+      print("/playPosition ", frames, pos)
+      total_times2 = total_times2 + 1
+  end
+    wheels[wheelNum].position = util.clamp(math.floor((pos / (frames + 1)) * 64), 0, 64)
     redraw()
-  -- elseif path == "/fileLoaded" then
-  --   local wheelNum = args[1] + 1
-  --   local numFrames = args[2]
-  --   wheels[wheelNum].frames = numFrames
+  elseif path == "/fileLoaded" then
+    local wheelNum = args[1] + 1
+    local numFrames = args[2]
+    print("osc fileLoaded wheel " .. wheelNum .. " frames " .. numFrames)
+    wheels[wheelNum].frames = numFrames
+    -- Resize all wheels to the max frame size
+    maxFrames = 0
+    for i = 1, 4 do
+      print("  wheels[" .. i .. "] frames: " .. wheels[i].frames)
+      if wheels[i].frames > maxFrames then
+        maxFrames = wheels[i].frames
+      end
+    end
+    print("setting all loops to end at " .. maxFrames)
+    for i = 1, 4 do
+      engine.setLength(i - 1, maxFrames)
+    end
   else
     print("Other OSC path", path)
   end
@@ -338,9 +368,17 @@ end
 
 function init()
   print("Inside of init")
-  engine.loadFromFile(0, "/home/we/dust/code/repl-looper/audio/musicbox/Wouldnt-Mind-Workin-From-Sun-To-Sun_2011121108_001_00-01-05.ogg")
-  engine.loadFromFile(1, "/home/we/dust/code/repl-looper/audio/musicbox/Wouldnt-Mind-Workin-From-Sun-To-Sun_2011121108_002_00-01-32.ogg")
-  engine.loadFromFile(2, "/home/we/dust/code/repl-looper/audio/musicbox/Wouldnt-Mind-Workin-From-Sun-To-Sun_2011121108_003_00-01-52.ogg")
-  engine.loadFromFile(3, "/home/we/dust/code/repl-looper/audio/musicbox/William-Gagnon_DR000067_003_00-00-47.ogg")
+  os.execute("mkdir -p /home/we/dust/audio/rotae_versantur")
+
+  -- engine.loadFromFile(0, "/home/we/dust/code/repl-looper/audio/musicbox/Wouldnt-Mind-Workin-From-Sun-To-Sun_2011121108_001_00-01-05.ogg")
+  -- engine.loadFromFile(1, "/home/we/dust/code/repl-looper/audio/musicbox/Wouldnt-Mind-Workin-From-Sun-To-Sun_2011121108_002_00-01-32.ogg")
+  -- engine.loadFromFile(2, "/home/we/dust/code/repl-looper/audio/musicbox/Wouldnt-Mind-Workin-From-Sun-To-Sun_2011121108_003_00-01-52.ogg")
+  -- engine.loadFromFile(3, "/home/we/dust/code/repl-looper/audio/musicbox/William-Gagnon_DR000067_003_00-00-47.ogg")
+
+  -- Load previous recordings
+  engine.loadFromFile(0, "/home/we/dust/audio/rotae_versantur/recording_buffer_0.wav")
+  engine.loadFromFile(1, "/home/we/dust/audio/rotae_versantur/recording_buffer_1.wav")
+  engine.loadFromFile(2, "/home/we/dust/audio/rotae_versantur/recording_buffer_2.wav")
+  engine.loadFromFile(3, "/home/we/dust/audio/rotae_versantur/recording_buffer_3.wav")
 end
 

@@ -15,12 +15,12 @@ Engine_RotaeVersantur : CroneEngine {
   alloc {
 
     SynthDef(\WheelSynth, {
-      arg out=0, bufnum=0, rate=1, start=0, end=1, t_trig=0, jumpPos=0, wheelNum=0, amp=1;
+      arg out=0, bufnum=0, rate=1, startFrame=0, endFrame=1, t_trig=0, jumpPos=0, wheelNum=0, amp=1;
       var snd, playHead, duration, envelope, frames;
 
       rate = rate * BufRateScale.kr(bufnum);
       frames = BufFrames.kr(bufnum);
-      duration = frames * (end - start) / rate / context.server.sampleRate;
+      duration = (endFrame - startFrame) / rate / context.server.sampleRate;
 
       envelope = EnvGen.ar(
         Env.new(
@@ -34,15 +34,15 @@ Engine_RotaeVersantur : CroneEngine {
       playHead = Phasor.ar(
         trig: t_trig,
         rate: rate,
-        start: start * frames,
-        end: end * frames,
+        start: startFrame,
+        end: endFrame,
         resetPos: jumpPos,
       );
 
       SendReply.kr(
         trig: Impulse.kr(4),
         cmdName: '/playPosition',
-        values: [ wheelNum, frames, start * frames, end * frames, playHead ]
+        values: [ wheelNum, frames, startFrame, endFrame, playHead ]
       );
 
       snd = BufRd.ar(
@@ -101,13 +101,13 @@ Engine_RotaeVersantur : CroneEngine {
         // wheels[wheelNum].set(\bufnum, bufnum, \rate, 0, \t_trig, 1);
         buffers[wheelNum].free; // Free the old one
         buffers[wheelNum] = buffer;
-        wheels[wheelNum].set(\bufnum, buffer.bufnum, \rate, 0, \t_trig, 1);
+        wheels[wheelNum].set(\bufnum, buffer.bufnum, \endFrame, buffer.numFrames, \rate, 0, \t_trig, 1);
 
         // Communicate back that the sample is loaded
         // scriptAddress.sendBundle(0, ['/fileLoaded', filename, fileFrames]);
-        // NetAddr("127.0.0.1", 10111).sendMsg(
-        //   "/fileLoaded", wheelNum, fileFrames
-        // );
+        NetAddr("127.0.0.1", 10111).sendMsg(
+          "/fileLoaded", wheelNum, buffer.numFrames
+        );
 
       })
     });
@@ -146,7 +146,7 @@ Engine_RotaeVersantur : CroneEngine {
       var wheelNum = msg[1];
       ("Recording starting for wheel " ++ wheelNum).postln;
       ~recBuf = Buffer.alloc(context.server, 65536, 2);
-      ~recBuf.write("/tmp/recording_buffer.wav", "wav", "int24", 0, 0, true);
+      ~recBuf.write("/home/we/dust/audio/rotae_versantur/recording_buffer_" ++ wheelNum ++ ".wav", "wav", "int24", 0, 0, true);
       ~recorder = Synth(\recordToFile, [\bufnum, ~recBuf]);
     });
 
@@ -158,13 +158,16 @@ Engine_RotaeVersantur : CroneEngine {
       ~recBuf.close({
         ("Recording file closed for wheel " ++ wheelNum).postln;
         ~recBuf.free;
-        Buffer.read(context.server, "/tmp/recording_buffer.wav", action: {
+        Buffer.read(context.server, "/home/we/dust/audio/rotae_versantur/recording_buffer_" ++ wheelNum ++ ".wav", action: {
           arg buffer;
           ("recording loaded frames: " ++ buffer.numFrames).postln;
           buffers[wheelNum].free; // Free the old one
           buffers[wheelNum] = buffer;
           // wheels[wheelNum].set(\bufnum, buffer.bufnum, \rate, 0, \t_trig, 1);
-          wheels[wheelNum].set(\bufnum, buffer.bufnum);
+          wheels[wheelNum].set(\bufnum, buffer.bufnum, \endFrame, buffer.numFrames);
+          NetAddr("127.0.0.1", 10111).sendMsg(
+            "/fileLoaded", wheelNum, buffer.numFrames
+          );
         });
       });
     });
@@ -192,6 +195,14 @@ Engine_RotaeVersantur : CroneEngine {
       var amp = msg[2];
       ("Wheel " ++ wheelNum ++ " setting amp to " ++ amp).postln;
       wheels[wheelNum].set(\amp, amp);
+    });
+
+    this.addCommand("setLength", "if", {
+      arg msg;
+      var wheelNum = msg[1];
+      var length = msg[2];
+      ("Wheel " ++ wheelNum ++ " setting endFrame to " ++ length).postln;
+      wheels[wheelNum].set(\endFrame, length);
     });
   }
 
