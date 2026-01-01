@@ -1,10 +1,12 @@
 
 Engine_RotaeVersantur : CroneEngine {
   classvar numWheels = 4;
-  var buffer;
-  var play_buf_player_synthdef;
   var oscPositionInfo;
   var wheels;
+  var buffers;
+  var recorders;
+  var recBuf;
+  var recorder;
 
   *new { arg context, doneCallback;
     ^super.new(context, doneCallback);
@@ -14,7 +16,7 @@ Engine_RotaeVersantur : CroneEngine {
 
     SynthDef(\WheelSynth, {
       arg out=0, bufnum=0, rate=1, start=0, end=1, t_trig=0, jumpPos=0, wheelNum=0, amp=1;
-      var snd, playHead, frames, duration, envelope;
+      var snd, playHead, duration, envelope, frames;
 
       rate = rate * BufRateScale.kr(bufnum);
       frames = BufFrames.kr(bufnum);
@@ -56,10 +58,6 @@ Engine_RotaeVersantur : CroneEngine {
       Out.ar(out, snd)
     }).add;
 
-		wheels = Array.fill(numWheels, { arg i;
-			Synth.new(\WheelSynth, [\wheelNum, i]);
-		});
-
     oscPositionInfo = OSCFunc({ |msg|
       var wheelNum = msg[3];
       var frames = msg[4];
@@ -71,21 +69,106 @@ Engine_RotaeVersantur : CroneEngine {
       );
     }, '/playPosition');
 
+    // inputBus = Bus.audio(context.server, 1);
+
+    buffers = Array.fill(numWheels, {
+      arg i;
+      var bufferLengthSeconds = 30; // 30 seconds each 60 * 5; // 5 minutes each
+
+      Buffer.alloc(
+        context.server,
+        context.server.sampleRate * bufferLengthSeconds,
+        2
+      );
+    });
+
+		wheels = Array.fill(numWheels, { arg i;
+			Synth.new(\WheelSynth, [\wheelNum, i, \bufnum, buffers[i].bufnum]);
+		});
+
     this.addCommand("loadFromFile", "is", {
       arg msg;
       var wheelNum = msg[1];
       var filename = msg[2];
+
       ("Going to load " ++ filename ++ " into wheel " ++ wheelNum).postln;
+
+      // Buffer.read(context.server, filename, action: {
+      // buffers[wheelNum].read(filename, action: {
       Buffer.read(context.server, filename, action: {
-        arg bufnum;
-        ("loaded " ++ filename ++ " frames: " ++ bufnum.numFrames).postln;
-        wheels[wheelNum].set(\bufnum, bufnum, \rate, 0, \t_trig, 1);
+        arg buffer;
+        ("loaded " ++ filename ++ " frames: " ++ buffer.numFrames).postln;
+        // wheels[wheelNum].set(\bufnum, bufnum, \rate, 0, \t_trig, 1);
+        buffers[wheelNum].free; // Free the old one
+        buffers[wheelNum] = buffer;
+        wheels[wheelNum].set(\bufnum, buffer.bufnum, \rate, 0, \t_trig, 1);
 
         // Communicate back that the sample is loaded
-        // scriptAddress.sendBundle(0, ['/engineSamplerLoad', filename, bufnum.numFrames]);
+        // scriptAddress.sendBundle(0, ['/fileLoaded', filename, fileFrames]);
+        // NetAddr("127.0.0.1", 10111).sendMsg(
+        //   "/fileLoaded", wheelNum, fileFrames
+        // );
 
       })
     });
+
+    // SynthDef(\recordBuf, {
+    //   arg bufnum = 0, run = 0, preLevel = 1.0, recLevel = 1.0;
+    //   var in = Mix.new(SoundIn.ar([0, 1]));
+    //
+    //   RecordBuf.ar(
+    //     in,
+    //     bufnum,
+    //     recLevel: recLevel,
+    //     preLevel: preLevel,
+    //     loop: 1,
+    //     run: run
+    //   );
+    // }).add;
+    //
+    // recorders = Array.fill(numWheels, { arg i;
+    //   Synth.new(\recordBuf, [
+    //     \bufnum, buffers[i].bufnum,
+    //     \run, 0
+    //   ]);
+    //   // ], target: pg);
+    // });
+
+    SynthDef(\recordToFile, {
+      arg bufnum = 0, out = 0, monitorAmp = 1;
+      var in = SoundIn.ar([0, 1]);
+      DiskOut.ar(bufnum, in);
+      Out.ar(out, in * monitorAmp);
+    }).add;
+
+    this.addCommand("recordStart", "i", {
+      arg msg;
+      var wheelNum = msg[1];
+      ("Recording starting for wheel " ++ wheelNum).postln;
+      ~recBuf = Buffer.alloc(context.server, 65536, 2);
+      ~recBuf.write("/tmp/recording_buffer.wav", "wav", "int24", 0, 0, true);
+      ~recorder = Synth(\recordToFile, [\bufnum, ~recBuf]);
+    });
+
+    this.addCommand("recordStop", "i", {
+      arg msg;
+      var wheelNum = msg[1];
+      ("Recording stopping for wheel " ++ wheelNum).postln;
+      ~recorder.free;
+      ~recBuf.close({
+        ("Recording file closed for wheel " ++ wheelNum).postln;
+        ~recBuf.free;
+        Buffer.read(context.server, "/tmp/recording_buffer.wav", action: {
+          arg buffer;
+          ("recording loaded frames: " ++ buffer.numFrames).postln;
+          buffers[wheelNum].free; // Free the old one
+          buffers[wheelNum] = buffer;
+          // wheels[wheelNum].set(\bufnum, buffer.bufnum, \rate, 0, \t_trig, 1);
+          wheels[wheelNum].set(\bufnum, buffer.bufnum);
+        });
+      });
+    });
+
 
     this.addCommand("setPosition", "ii", {
       arg msg;
@@ -114,6 +197,7 @@ Engine_RotaeVersantur : CroneEngine {
 
   free {
     wheels.do({ arg wheel; wheel.free; });
+    buffers.do({ arg buffer; buffer.free; });
     oscPositionInfo.free;
   }
 }

@@ -65,6 +65,7 @@ function Wheel.new(options)
     record = false,
     bounce = false,
     frames = 1,
+    currentFrame = 0,
     rate = 1.0,
   }
   Wheel.next_id = Wheel.next_id + 1
@@ -94,10 +95,11 @@ function Wheel:addDeltaRate(delta)
 end
 
 function Wheel:addDeltaPosition(d)
-  print("addDeltaPosition 2", self.id, d)
-  self.position = self.position + d
+  print("addDeltaPosition", self.id, d)
+  self.position = util.clamp(self.position + d, 0, 64)
+  self.currentFrame = util.clamp(self.position / 64 * self.frames, 0, self.frames)
   -- Seek to this position in the playback
-  engine.setPosition(self.id - 1, self.position / 64 * self.frames)
+  engine.setPosition(self.id - 1, self.currentFrame)
 end
 
 function Wheel:draw(arc)
@@ -108,6 +110,13 @@ function Wheel:draw(arc)
   end
   for ledNum = 1, ampLed do
     arc:led(self.id, ledNum, 4)
+  end
+
+  -- Indicate which is currently recording with some stripes
+  if self.record then
+    for i = 1, 64, 4 do
+      arc:led(self.id, i, 2)
+    end
   end
 
   arc:led(self.id, self.position, 15)
@@ -234,14 +243,18 @@ my_arc.key = function(n, z)
     wheel_state = ((wheel_state + 2) % 2) + 1
     print("wheel_state", wheel_state)
     if wheel_states[wheel_state] == "rolling" then
-      -- engine.play("/home/we/dust/audio/x0x/808/808-RS.wav", 1, 0, 0, 1, 0, 1, 1)
-      -- engine.loadFromFile("/home/we/dust/audio/x0x/808/808-RS.wav")
+      if record_focus > 0 then
+        engine.recordStart(record_focus - 1)
+      end
       for wheelNum, wheel in ipairs(wheels) do
         engine.setRate(wheelNum - 1, 1)
       end
     elseif wheel_states[wheel_state] == "stopped" then
       for wheelNum, wheel in ipairs(wheels) do
         engine.setRate(wheelNum - 1, 0)
+      end
+      if record_focus > 0 then
+        engine.recordStop(record_focus - 1)
       end
     end
 
@@ -310,9 +323,14 @@ function osc.event(path, args, from)
     local endFrame = args[4]
     local pos = args[5]
     print("osc event set playPosition", wheelNum, frames, startFrame, endFrame, pos)
-    wheels[wheelNum].position = math.floor((pos / frames) * 64)
     wheels[wheelNum].frames = frames
+    wheels[wheelNum].currentFrame = pos
+    wheels[wheelNum].position = math.floor((pos / frames) * 64)
     redraw()
+  -- elseif path == "/fileLoaded" then
+  --   local wheelNum = args[1] + 1
+  --   local numFrames = args[2]
+  --   wheels[wheelNum].frames = numFrames
   else
     print("Other OSC path", path)
   end
