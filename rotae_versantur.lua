@@ -49,7 +49,7 @@ local record_focus = 0
 local bounce_select_detail = 0
 local bounce_select = 0
 
-local maxFrames = 0
+local maxFrames = 1
 
 local Wheel = {}
 Wheel.__index = Wheel
@@ -76,11 +76,13 @@ end
 
 function Wheel:toString()
   return self.amp ..
-         " " .. self.pan ..
-         " " .. self.reverb ..
+         -- " " .. self.pan ..
+         -- " " .. self.reverb ..
          " " .. self.position ..
-         " " .. tostring(self.record) ..
-         " " .. tostring(self.bounce)
+         " " .. self.currentFrame ..
+         " " .. self.frames
+         -- " " .. tostring(self.record) ..
+         -- " " .. tostring(self.bounce)
 end
 
 function Wheel:addDeltaAmp(delta)
@@ -95,10 +97,20 @@ function Wheel:addDeltaRate(delta)
   engine.setRate(self.id - 1, self.rate)
 end
 
+-- Relative to own length
+-- function Wheel:addDeltaPosition(d)
+--   print("addDeltaPosition", self.id, d)
+--   self.position = util.clamp(self.position + d, 0, 64)
+--   self.currentFrame = util.clamp(self.position / 64 * self.frames, 0, self.frames)
+--   -- Seek to this position in the playback
+--   engine.setPosition(self.id - 1, self.currentFrame)
+-- end
+
+-- Relative to max length
 function Wheel:addDeltaPosition(d)
   print("addDeltaPosition", self.id, d)
   self.position = util.clamp(self.position + d, 0, 64)
-  self.currentFrame = util.clamp(self.position / 64 * self.frames, 0, self.frames)
+  self.currentFrame = util.clamp(self.position / 64 * maxFrames, 0, maxFrames)
   -- Seek to this position in the playback
   engine.setPosition(self.id - 1, self.currentFrame)
 end
@@ -121,10 +133,10 @@ function Wheel:draw(arc)
     end
   end
 
-  if total_times < 100 then
-    print("arc:led(" .. self.id .. ", math.floor(" .. self.position .. ") + 1, 15)")
-    total_times = total_times + 1
-  end
+  -- if total_times < 100 then
+  --   print("arc:led(" .. self.id .. ", math.floor(" .. self.position .. ") + 1, 15)")
+  --   total_times = total_times + 1
+  -- end
   arc:led(self.id, math.floor(self.position), 15)
 end
 
@@ -179,7 +191,10 @@ my_arc.delta = function(wheelNum, delta)
 
       -- The button is pressed
       if wheelNum == 1 then
-        shift_mode = "?"
+        shift_mode = "seek_all"
+        for wheel_num = 1, 4 do
+          wheels[wheel_num]:addDeltaPosition(delta)
+        end
       elseif wheelNum == 2 then
         shift_mode = "?"
       elseif wheelNum == 3 then
@@ -202,18 +217,23 @@ my_arc.delta = function(wheelNum, delta)
         print("bounce select", bounce_select_detail, bounce_select)
         for wheel_num = 1, 4 do
           wheels[wheel_num].bounce = false
+          engine.bounceStop(wheel_num - 1)
         end
         if bounce_select % 16 > 7 then
           wheels[1].bounce = true
+          engine.bounceStart(0)
         end
         if bounce_select % 8 > 3 then
           wheels[2].bounce = true
+          engine.bounceStart(1)
         end
         if bounce_select % 4 > 1 then
           wheels[3].bounce = true
+          engine.bounceStart(2)
         end
         if bounce_select % 2 > 0 then
           wheels[4].bounce = true
+          engine.bounceStart(3)
         end
       end
 
@@ -261,6 +281,9 @@ my_arc.key = function(n, z)
       end
       if record_focus > 0 then
         engine.recordStop(record_focus - 1)
+        for wheelNum, wheel in ipairs(wheels) do
+          engine.setPosition(wheelNum - 1, 0)
+        end
       end
     end
 
@@ -280,7 +303,7 @@ function redraw()
   screen.level(15)
 
   screen.move(0,5)
-  screen.text("maxFrame: " .. maxFrames)
+  screen.text("maxFrames: " .. maxFrames)
 
   screen.move(0,10)
   screen.text("Wheels: " .. wheel_states[wheel_state] .. " Shift: " .. shift_mode)
@@ -293,7 +316,7 @@ function redraw()
 
   my_arc:all(0)
 
-  if shift_mode == "none" or shift_mode == "seek" then
+  if shift_mode == "none" or shift_mode == "seek" or shift_mode == "seek_all" then
     for i, wheel in ipairs(wheels) do
       wheel:draw(my_arc)
     end
@@ -342,7 +365,10 @@ function osc.event(path, args, from)
       print("/playPosition ", frames, pos)
       total_times2 = total_times2 + 1
   end
-    wheels[wheelNum].position = util.clamp(math.floor((pos / (frames + 1)) * 64), 0, 64)
+    -- relative position
+    -- wheels[wheelNum].position = util.clamp(math.floor((pos / (frames + 1)) * 64), 0, 64)
+    -- position based on max frame
+    wheels[wheelNum].position = util.clamp(math.floor((math.min(pos, frames) / maxFrames) * 64), 0, 64)
     redraw()
   elseif path == "/fileLoaded" then
     local wheelNum = args[1] + 1
@@ -350,7 +376,7 @@ function osc.event(path, args, from)
     print("osc fileLoaded wheel " .. wheelNum .. " frames " .. numFrames)
     wheels[wheelNum].frames = numFrames
     -- Resize all wheels to the max frame size
-    maxFrames = 0
+    maxFrames = 1
     for i = 1, 4 do
       print("  wheels[" .. i .. "] frames: " .. wheels[i].frames)
       if wheels[i].frames > maxFrames then

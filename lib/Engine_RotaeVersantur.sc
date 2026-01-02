@@ -7,6 +7,7 @@ Engine_RotaeVersantur : CroneEngine {
   var recorders;
   var recBuf;
   var recorder;
+  // var recBus;
 
   *new { arg context, doneCallback;
     ^super.new(context, doneCallback);
@@ -14,8 +15,10 @@ Engine_RotaeVersantur : CroneEngine {
 
   alloc {
 
+    ~recBus = Bus.audio(context.server, 2);
+
     SynthDef(\WheelSynth, {
-      arg out=0, bufnum=0, rate=1, startFrame=0, endFrame=1, t_trig=0, jumpPos=0, wheelNum=0, amp=1;
+      arg out=0, recordBus, bouncing=0, bufnum=0, rate=1, startFrame=0, endFrame=1, t_trig=0, jumpPos=0, wheelNum=0, amp=1;
       var snd, playHead, duration, envelope, frames;
 
       rate = rate * BufRateScale.kr(bufnum);
@@ -55,7 +58,8 @@ Engine_RotaeVersantur : CroneEngine {
 
       snd = snd * envelope * amp;
 
-      Out.ar(out, snd)
+      Out.ar(out, snd);
+      Out.ar(recordBus, snd * bouncing);
     }).add;
 
     oscPositionInfo = OSCFunc({ |msg|
@@ -73,7 +77,7 @@ Engine_RotaeVersantur : CroneEngine {
 
     buffers = Array.fill(numWheels, {
       arg i;
-      var bufferLengthSeconds = 30; // 30 seconds each 60 * 5; // 5 minutes each
+      var bufferLengthSeconds = 1; // 30 seconds each 60 * 5; // 5 minutes each
 
       Buffer.alloc(
         context.server,
@@ -82,9 +86,13 @@ Engine_RotaeVersantur : CroneEngine {
       );
     });
 
+    context.server.sync;
+
 		wheels = Array.fill(numWheels, { arg i;
-			Synth.new(\WheelSynth, [\wheelNum, i, \bufnum, buffers[i].bufnum]);
+			Synth.new(\WheelSynth, [\wheelNum, i, \bufnum, buffers[i].bufnum, \recordBus, ~recBus]);
 		});
+
+    context.server.sync;
 
     this.addCommand("loadFromFile", "is", {
       arg msg;
@@ -112,34 +120,28 @@ Engine_RotaeVersantur : CroneEngine {
       })
     });
 
-    // SynthDef(\recordBuf, {
-    //   arg bufnum = 0, run = 0, preLevel = 1.0, recLevel = 1.0;
-    //   var in = Mix.new(SoundIn.ar([0, 1]));
-    //
-    //   RecordBuf.ar(
-    //     in,
-    //     bufnum,
-    //     recLevel: recLevel,
-    //     preLevel: preLevel,
-    //     loop: 1,
-    //     run: run
-    //   );
-    // }).add;
-    //
-    // recorders = Array.fill(numWheels, { arg i;
-    //   Synth.new(\recordBuf, [
-    //     \bufnum, buffers[i].bufnum,
-    //     \run, 0
-    //   ]);
-    //   // ], target: pg);
-    // });
-
     SynthDef(\recordToFile, {
-      arg bufnum = 0, out = 0, monitorAmp = 1;
-      var in = SoundIn.ar([0, 1]);
-      DiskOut.ar(bufnum, in);
-      Out.ar(out, in * monitorAmp);
+      arg bufnum = 0, recordBus, out = 0, monitorAmp = 1;
+      var mic = SoundIn.ar([0, 1]);
+      var wheels = In.ar(recordBus, 2);
+      var mix = mic + wheels;
+
+      // mic.poll(4);
+      // wheels.poll(4);
+      // mix.poll(4);
+
+      DiskOut.ar(bufnum, mix);
+      // DiskOut.ar(bufnum, mic);
+      Out.ar(out, mic * monitorAmp);
     }).add;
+
+    // SynthDef(\recordToFile, {
+    //   arg bufnum = 0, out = 0, monitorAmp = 1;
+    //   var in = SoundIn.ar([0, 1]);
+    //   DiskOut.ar(bufnum, in);
+    //   Out.ar(out, in * monitorAmp);
+    // }).add;
+
 
     this.addCommand("recordStart", "i", {
       arg msg;
@@ -147,7 +149,7 @@ Engine_RotaeVersantur : CroneEngine {
       ("Recording starting for wheel " ++ wheelNum).postln;
       ~recBuf = Buffer.alloc(context.server, 65536, 2);
       ~recBuf.write("/home/we/dust/audio/rotae_versantur/recording_buffer_" ++ wheelNum ++ ".wav", "wav", "int24", 0, 0, true);
-      ~recorder = Synth(\recordToFile, [\bufnum, ~recBuf]);
+      ~recorder = Synth(\recordToFile, [\bufnum, ~recBuf, \recordBus, ~recBus], addAction: \addToTail);
     });
 
     this.addCommand("recordStop", "i", {
@@ -170,6 +172,20 @@ Engine_RotaeVersantur : CroneEngine {
           );
         });
       });
+    });
+
+    this.addCommand("bounceStart", "i", {
+      arg msg;
+      var wheelNum = msg[1];
+      wheels[wheelNum].set(\bouncing, 1);
+      ("Bounce on: " ++ wheelNum).postln;
+    });
+
+    this.addCommand("bounceStop", "i", {
+      arg msg;
+      var wheelNum = msg[1];
+      wheels[wheelNum].set(\bouncing, 0);
+      ("Bounce off: " ++ wheelNum).postln;
     });
 
 
@@ -210,5 +226,6 @@ Engine_RotaeVersantur : CroneEngine {
     wheels.do({ arg wheel; wheel.free; });
     buffers.do({ arg buffer; buffer.free; });
     oscPositionInfo.free;
+    ~recBus.free;
   }
 }
