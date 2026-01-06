@@ -72,9 +72,9 @@ function Wheel.new(options)
 end
 
 function Wheel:toString()
-  return self.amp ..
-         " " .. self.pan ..
-         " " .. self.reverb ..
+  return        string.format("%.2f", self.amp) ..
+         " " .. string.format("%.2f", self.pan) ..
+         " " .. string.format("%.2f", self.reverb) ..
          " " .. self.position ..
          " " .. self.currentFrame ..
          " " .. self.frames
