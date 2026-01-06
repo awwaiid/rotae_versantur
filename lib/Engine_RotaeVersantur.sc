@@ -5,8 +5,8 @@ Engine_RotaeVersantur : CroneEngine {
   var wheels;
   var buffers;
   var recorders;
-  var recBuf;
-  var recorder;
+  // var recBuf;
+  // var recorder;
   // var recBus;
 
   *new { arg context, doneCallback;
@@ -23,12 +23,12 @@ Engine_RotaeVersantur : CroneEngine {
 
       rate = rate * BufRateScale.kr(bufnum);
       frames = BufFrames.kr(bufnum);
-      duration = (endFrame - startFrame) / rate / context.server.sampleRate;
+      duration = (endFrame - startFrame) / (rate.max(0.001)) / context.server.sampleRate;
 
       envelope = EnvGen.ar(
         Env.new(
           levels: [0, 1, 1, 0],
-          times: [0, duration - 0.01, 0.01],
+          times: [0, (duration - 0.01).max(0), 0.01],
           curve: \sine,
         ),
         gate: t_trig,
@@ -56,7 +56,7 @@ Engine_RotaeVersantur : CroneEngine {
         interpolation: 4,
       );
 
-      snd = Pan2.ar(snd, pan);
+      snd = Balance2.ar(snd[0], snd[1], pan);
       snd = FreeVerb2.ar(snd[0], snd[1], reverbMix);
       snd = snd * envelope * amp;
 
@@ -149,9 +149,10 @@ Engine_RotaeVersantur : CroneEngine {
       arg msg;
       var wheelNum = msg[1];
       ("Recording starting for wheel " ++ wheelNum).postln;
-      ~recBuf = Buffer.alloc(context.server, 65536, 2);
-      ~recBuf.write("/home/we/dust/audio/rotae_versantur/recording_buffer_" ++ wheelNum ++ ".wav", "wav", "int24", 0, 0, true);
-      ~recorder = Synth(\recordToFile, [\bufnum, ~recBuf, \recordBus, ~recBus], addAction: \addToTail);
+      ~recBuf = Buffer.alloc(context.server, 65536, 2, {
+        ~recBuf.write("/home/we/dust/audio/rotae_versantur/recording_buffer_" ++ wheelNum ++ ".wav", "wav", "int24", 0, 0, true);
+        ~recorder = Synth(\recordToFile, [\bufnum, ~recBuf, \recordBus, ~recBus], addAction: \addToTail);
+      });
     });
 
     this.addCommand("recordStop", "i", {
@@ -241,6 +242,8 @@ Engine_RotaeVersantur : CroneEngine {
   }
 
   free {
+    if(~recorder.notNil, { ~recorder.free; });
+    if(~recBuf.notNil, { ~recBuf.free; });
     wheels.do({ arg wheel; wheel.free; });
     buffers.do({ arg buffer; buffer.free; });
     oscPositionInfo.free;

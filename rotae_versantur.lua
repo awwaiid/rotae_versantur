@@ -175,7 +175,7 @@ function Wheel:draw(arc)
   end
 
   -- Make the current position the brightest
-  arc:led(self.id, math.floor(self.position), 15)
+  arc:led(self.id, math.floor(self.position) + 1, 15)
 end
 
 -- function Editor:redraw()
@@ -503,9 +503,14 @@ function init()
   -- engine.loadFromFile(3, "/home/we/dust/code/repl-looper/audio/musicbox/William-Gagnon_DR000067_003_00-00-47.ogg")
 
   -- Load previous recordings
-  engine.loadFromFile(0, "/home/we/dust/audio/rotae_versantur/recording_buffer_0.wav")
-  engine.loadFromFile(1, "/home/we/dust/audio/rotae_versantur/recording_buffer_1.wav")
-  engine.loadFromFile(2, "/home/we/dust/audio/rotae_versantur/recording_buffer_2.wav")
-  engine.loadFromFile(3, "/home/we/dust/audio/rotae_versantur/recording_buffer_3.wav")
+  clock.run(function()
+    engine.loadFromFile(0, "/home/we/dust/audio/rotae_versantur/recording_buffer_0.wav")
+    clock.sleep(0.1)
+    engine.loadFromFile(1, "/home/we/dust/audio/rotae_versantur/recording_buffer_1.wav")
+    clock.sleep(0.1)
+    engine.loadFromFile(2, "/home/we/dust/audio/rotae_versantur/recording_buffer_2.wav")
+    clock.sleep(0.1)
+    engine.loadFromFile(3, "/home/we/dust/audio/rotae_versantur/recording_buffer_3.wav")
+  end)
 end
 
