@@ -8,25 +8,21 @@
 -- Button release
 --   Toggle Rolling vs Stopped
 --
--- Rolling Wheel
---   Set amp for that track
+-- Wheel
+--   Set [MODE] for that track
+--   Amp, Seek, Pan, Reverb
 --
--- Button + Rolling Wheel
---   Seek to position on track
+-- Button + Wheel 2
+--   Set MODE
+--   Amp, Pan, Reverb, Freq
 --
--- Stopped Wheel
---   Seek to position on track
+-- Button + Wheel 2
+--   Seek all
 --
--- Button + Stopped Wheel 1
---   Seek to position all tracks
---
--- Button + Stopped Wheel 2
---   Select unmuted tracks
---
--- Button + Stopped Wheel 3
+-- Button + Wheel 3
 --   Select recording track
 --
--- Button + Stopped Wheel 4
+-- Button + Wheel 4
 --   Select bounced tracks,
 --   they then feed recording
 --
@@ -37,11 +33,7 @@ local wheel_state = 1 -- stopped
 
 local button_pressed = false
 
-local action_modes = { "seek", "amp", "pan", "reverb" }
-local stopped_action_mode = 1 -- seek
-local rolling_action_mode = 2 -- amp
-
-local shift_mode = "none" -- none, record, bounce, seek
+local shift_mode = "none" -- none, record, bounce, seek_all, wheel_mode
 
 local record_focus_detail = 0
 local record_focus = 0
@@ -49,7 +41,11 @@ local record_focus = 0
 local bounce_select_detail = 0
 local bounce_select = 0
 
-local maxFrames = 1
+local maxFrames = 1 -- How long is the longest track
+
+local mode_select_detail = 0
+local mode_select = 0
+local wheel_mode = "amp" -- amp, pan, reverb, freq_cutoff
 
 local Wheel = {}
 Wheel.__index = Wheel
@@ -60,6 +56,7 @@ function Wheel.new(options)
   local self = {
     id = Wheel.next_id,
     amp = 1.0,
+    amp_detail = 256,
     pan = 0.0,
     reverb = 0.0,
     position = 0,
@@ -76,8 +73,8 @@ end
 
 function Wheel:toString()
   return self.amp ..
-         -- " " .. self.pan ..
-         -- " " .. self.reverb ..
+         " " .. self.pan ..
+         " " .. self.reverb ..
          " " .. self.position ..
          " " .. self.currentFrame ..
          " " .. self.frames
@@ -87,8 +84,35 @@ end
 
 function Wheel:addDeltaAmp(delta)
   print("addDeltaAmp", self.id, delta)
-  self.amp = util.clamp(self.amp + (delta / 256), 0, 4)
+  -- If x is 0..1 (in 1/1024'th increments)
+  -- (x*4 - 1)^3 + 1
+  -- this gives us an amp of 1 at 1/4 turn, 2 at 1/2 turn, and exponential thereafter up to 28
+  self.amp_detail = util.clamp(self.amp_detail + delta, 0, 1023)
+  self.amp = (((self.amp_detail / 1024) * 4) - 1) ^ 3 + 1
+  print("  amp", self.amp)
+  -- self.amp = util.clamp(self.amp + ((delta / 1024) * 4), 0, 4)
   engine.setAmp(self.id - 1, self.amp)
+end
+
+function Wheel:addDeltaReverb(delta)
+  print("addDeltaReverb", self.id, delta)
+  self.reverb = util.clamp(self.reverb + ((delta / 1024) * 4), 0, 1)
+  engine.setReverbMix(self.id - 1, self.reverb)
+end
+
+function Wheel:addDeltaPan(delta)
+  print("addDeltaPan", self.id, delta)
+  self.pan = util.clamp(self.pan + ((delta / 1024) * 4), -1, 1)
+  engine.setPan(self.id - 1, self.pan)
+end
+
+function Wheel:addDeltaFreqCutoff(delta)
+  print("addDeltaFreqCutoff", self.id, delta)
+  -- The idea here is to go from -1 .. 1
+  -- When it is negative we do a low-pass cutoff filter
+  -- When it is positive we do a high-pass cutoff filter
+  self.freqCutoff = util.clamp(self.freqCutoff + ((delta / 1024) * 4), -1, 1)
+  -- engine.setFreqCutoff(self.id - 1, self.freqCutoff)
 end
 
 function Wheel:addDeltaRate(delta)
@@ -117,13 +141,30 @@ end
 
 local total_times = 0
 function Wheel:draw(arc)
-  -- 1/4 = 1 so we can max amp of 4
-  local ampLed = math.floor(self.amp * (64/4)) + 1
-  if self.amp == 0.0 then
-    ampLed = 0
-  end
-  for ledNum = 1, ampLed do
-    arc:led(self.id, ledNum, 4)
+
+  if wheel_mode == "amp" then
+    local ampLed = math.floor(self.amp_detail / 16) + 1
+    for ledNum = 1, ampLed do
+      arc:led(self.id, ledNum, 4)
+    end
+  elseif wheel_mode == "pan" then
+    local panLed = math.floor(self.pan * 16) + 1
+    if panLed > 0 then
+      for ledNum = 1, panLed do
+        arc:led(self.id, ledNum, 4)
+      end
+    else
+      for ledNum = panLed, 1 do
+        arc:led(self.id, ledNum, 4)
+      end
+    end
+  elseif wheel_mode == "reverb" then
+    local reverbLed = math.floor(self.reverb * 64) + 1
+    for ledNum = 1, reverbLed do
+      arc:led(self.id, ledNum, 4)
+    end
+  elseif wheel_mode == "freq_cutoff" then
+    -- TODO
   end
 
   -- Indicate which is currently recording with some stripes
@@ -133,10 +174,7 @@ function Wheel:draw(arc)
     end
   end
 
-  -- if total_times < 100 then
-  --   print("arc:led(" .. self.id .. ", math.floor(" .. self.position .. ") + 1, 15)")
-  --   total_times = total_times + 1
-  -- end
+  -- Make the current position the brightest
   arc:led(self.id, math.floor(self.position), 15)
 end
 
@@ -184,9 +222,35 @@ my_arc.delta = function(wheelNum, delta)
 --   Select bounced tracks,
 --   they then feed recording
 
-  if wheel_states[wheel_state] == "stopped" then
+
+-- Wheel
+--   Set [MODIFIER] for that track
+--   Amp, Pan, Reverb
+--
+-- Button + Wheel 1
+--   Select current MODIFIER
+--   Amp, Pan, Reverb, Low/High pass
+--
+-- Button + Wheel 2
+--   Seek
+--
+-- Button + Wheel 3
+--   Select recording track
+--
+-- Button + Wheel 4
+--   Select bounced tracks,
+--   they then feed recording
+  -- if wheel_states[wheel_state] == "stopped" then
     if not button_pressed then
-      wheels[wheelNum]:addDeltaPosition(delta)
+      if wheel_mode == "amp" then
+        wheels[wheelNum]:addDeltaAmp(delta)
+      elseif wheel_mode == "pan" then
+        wheels[wheelNum]:addDeltaPan(delta)
+      elseif wheel_mode == "reverb" then
+        wheels[wheelNum]:addDeltaReverb(delta)
+      elseif wheel_mode == "freq_cutoff" then
+        wheels[wheelNum]:addDeltaFreqCutoff(delta)
+      end
     else
 
       -- The button is pressed
@@ -196,7 +260,19 @@ my_arc.delta = function(wheelNum, delta)
           wheels[wheel_num]:addDeltaPosition(delta)
         end
       elseif wheelNum == 2 then
-        shift_mode = "?"
+        shift_mode = "wheel_mode"
+        mode_select_detail = util.clamp(mode_select_detail + delta, 0, 300)
+        mode_select = mode_select_detail // 75
+        print("shift wheel mode select", shift_mode, mode_select_detail, mode_select)
+        if mode_select == 0 then
+          wheel_mode = "amp"
+        elseif mode_select == 1 then
+          wheel_mode = "pan"
+        elseif mode_select == 2 then
+          wheel_mode = "reverb"
+        elseif mode_select == 3 then
+          wheel_mode = "freq_cutoff"
+        end
       elseif wheelNum == 3 then
         shift_mode = "record"
         record_focus_detail = util.clamp(record_focus_detail + delta, 0, 300)
@@ -239,18 +315,18 @@ my_arc.delta = function(wheelNum, delta)
 
     end
 
-  elseif wheel_states[wheel_state] == "rolling" then
-
-    if button_pressed then
-      shift_mode = "seek"
-      wheels[wheelNum]:addDeltaPosition(delta)
-      -- shift_mode = "rate"
-      -- wheels[wheelNum]:addDeltaRate(delta)
-    else
-      wheels[wheelNum]:addDeltaAmp(delta)
-    end
-
-  end
+  -- elseif wheel_states[wheel_state] == "rolling" then
+  --
+  --   if button_pressed then
+  --     shift_mode = "seek"
+  --     wheels[wheelNum]:addDeltaPosition(delta)
+  --     -- shift_mode = "rate"
+  --     -- wheels[wheelNum]:addDeltaRate(delta)
+  --   else
+  --     wheels[wheelNum]:addDeltaAmp(delta)
+  --   end
+  --
+  -- end
 
   redraw()
 
@@ -281,9 +357,15 @@ my_arc.key = function(n, z)
       end
       if record_focus > 0 then
         engine.recordStop(record_focus - 1)
+
+        -- Rewind everything to the beginning
         for wheelNum, wheel in ipairs(wheels) do
           engine.setPosition(wheelNum - 1, 0)
         end
+
+        -- Also de-select (disarm) recording, it is to dangerous to leave
+        wheels[record_focus].record = false
+        record_focus = 0
       end
     end
 
@@ -303,13 +385,13 @@ function redraw()
   screen.level(15)
 
   screen.move(0,5)
-  screen.text("maxFrames: " .. maxFrames)
+  screen.text("maxFrames: " .. maxFrames .. " Mode: " .. wheel_mode)
 
-  screen.move(0,10)
+  screen.move(0,11)
   screen.text("Wheels: " .. wheel_states[wheel_state] .. " Shift: " .. shift_mode)
 
   for i, wheel in ipairs(wheels) do
-    screen.move(0, 10 + i * 10)
+    screen.move(0, 11 + i * 8)
     screen.text(i ..": " .. wheel:toString())
   end
   screen.update()
@@ -319,6 +401,25 @@ function redraw()
   if shift_mode == "none" or shift_mode == "seek" or shift_mode == "seek_all" then
     for i, wheel in ipairs(wheels) do
       wheel:draw(my_arc)
+    end
+  elseif shift_mode == "wheel_mode" then
+    local wheel_focus = 0
+    if wheel_mode == "amp" then
+      wheel_focus = 1
+    elseif wheel_mode == "pan" then
+      wheel_focus = 2
+    elseif wheel_mode == "reverb" then
+      wheel_focus = 3
+    elseif wheel_mode == "freq_cutoff" then
+      wheel_focus = 4
+    end
+
+    if wheel_focus < 1 then
+      my_arc:all(3)
+    else
+      for i = 1, 64 do
+        my_arc:led(wheel_focus, i, 15)
+      end
     end
   elseif shift_mode == "record" then
     if record_focus < 1 then

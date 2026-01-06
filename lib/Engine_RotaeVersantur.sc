@@ -18,7 +18,7 @@ Engine_RotaeVersantur : CroneEngine {
     ~recBus = Bus.audio(context.server, 2);
 
     SynthDef(\WheelSynth, {
-      arg out=0, recordBus, bouncing=0, bufnum=0, rate=1, startFrame=0, endFrame=1, t_trig=0, jumpPos=0, wheelNum=0, amp=1;
+      arg out=0, recordBus, bouncing=0, bufnum=0, rate=1, startFrame=0, endFrame=1, t_trig=0, jumpPos=0, wheelNum=0, amp=1, reverbMix=0, pan=0;
       var snd, playHead, duration, envelope, frames;
 
       rate = rate * BufRateScale.kr(bufnum);
@@ -56,6 +56,8 @@ Engine_RotaeVersantur : CroneEngine {
         interpolation: 4,
       );
 
+      snd = Pan2.ar(snd, pan);
+      snd = FreeVerb2.ar(snd[0], snd[1], reverbMix);
       snd = snd * envelope * amp;
 
       Out.ar(out, snd);
@@ -211,6 +213,22 @@ Engine_RotaeVersantur : CroneEngine {
       var amp = msg[2];
       ("Wheel " ++ wheelNum ++ " setting amp to " ++ amp).postln;
       wheels[wheelNum].set(\amp, amp);
+    });
+
+    this.addCommand("setPan", "if", {
+      arg msg;
+      var wheelNum = msg[1];
+      var pan = msg[2];
+      ("Wheel " ++ wheelNum ++ " setting pan to " ++ pan).postln;
+      wheels[wheelNum].set(\pan, pan);
+    });
+
+    this.addCommand("setReverbMix", "if", {
+      arg msg;
+      var wheelNum = msg[1];
+      var reverbMix = msg[2];
+      ("Wheel " ++ wheelNum ++ " setting reverbMix to " ++ reverbMix).postln;
+      wheels[wheelNum].set(\reverbMix, reverbMix);
     });
 
     this.addCommand("setLength", "if", {
