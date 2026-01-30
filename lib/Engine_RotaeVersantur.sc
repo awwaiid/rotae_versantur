@@ -149,10 +149,9 @@ Engine_RotaeVersantur : CroneEngine {
       arg msg;
       var wheelNum = msg[1];
       ("Recording starting for wheel " ++ wheelNum).postln;
-      ~recBuf = Buffer.alloc(context.server, 65536, 2, {
-        ~recBuf.write("/home/we/dust/audio/rotae_versantur/recording_buffer_" ++ wheelNum ++ ".wav", "wav", "int24", 0, 0, true);
-        ~recorder = Synth(\recordToFile, [\bufnum, ~recBuf, \recordBus, ~recBus], addAction: \addToTail);
-      });
+      ~recBuf = Buffer.alloc(context.server, 65536, 2);
+      ~recBuf.write("/home/we/dust/audio/rotae_versantur/recording_buffer_" ++ wheelNum ++ ".wav", "wav", "int24", 0, 0, true);
+      ~recorder = Synth(\recordToFile, [\bufnum, ~recBuf, \recordBus, ~recBus], addAction: \addToTail);
     });
 
     this.addCommand("recordStop", "i", {
