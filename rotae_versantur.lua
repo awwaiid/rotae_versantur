@@ -1,5 +1,7 @@
 -- Rotae Versantur
 -- The Wheels Turn
+-- v0 @awwaiid
+-- https://llllllll.co/t/rotae-versantur/73937
 --
 -- Use the Arc to visualize and
 -- control a four-track recording
