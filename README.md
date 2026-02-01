@@ -2,6 +2,8 @@
 
 > The wheels turn
 
+<img src="docs/rotae-in-situ.jpg" />
+
 A four-track recorder. This is a Norns script and engine optimized for the Monome Arc, though with a bit more tweaks it could be used with only a Norns.
 
 ## General Concept
