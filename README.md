@@ -6,6 +6,8 @@
 
 A four-track recorder. This is a Norns script and engine optimized for the Monome Arc, though with a bit more tweaks it could be used with only a Norns.
 
+Share your thought and ideas on the [Lines (llllllll.co) forum post](https://llllllll.co/t/rotae-versantur/73937)!
+
 ## General Concept
 
 Each wheel (knob) on the Arc represents a track. The Arc button toggles between playing (or recording), stopping when pressed and released. If you press the button and turn a wheel you get further actions.
